@@ -1,0 +1,24 @@
+# requirements.txt
+
+# Numerical arrays and matrix operations
+numpy>=1.20
+
+# Spectrogram and signal-processing routines
+scipy>=1.6
+
+# Audio file I/O (if your audio_loader.py uses soundfile)
+soundfile>=0.10
+
+# If audio_loader.py uses librosa instead of soundfile, uncomment:
+# librosa>=0.8
+
+# DataFrame manipulation (e.g., in evaluate.py or reporting scripts)
+pandas>=1.2
+
+# Classification metrics (for classification_report, etc.)
+scikit-learn>=0.24
+
+# (Optional) Progress bars, if you ever import tqdm:
+# tqdm>=4.50
+
+# Note: sqlite3 is part of the Python standard library and does NOT need to be listed here.

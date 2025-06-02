@@ -4,65 +4,45 @@ import sqlite3
 import unicodedata
 from audio_loader import load_audio
 from generator import Generator
+import argparse
+from inmemory_recognizer import InMemoryRecognizer
 
 
 class Identify:
-    """
-    Reconocedor ultra-rápido que vuelca las huellas del sample en una tabla
-    TEMPORAL y deja que SQLite ejecute en C un JOIN+GROUP BY para elegir
-    la pista con más coincidencias.
-    """
     def __init__(self, db_path: str, sr: int = 44100):
         self.conn = sqlite3.connect(db_path)
         self.cur  = self.conn.cursor()
         self.fg   = Generator(sr=sr)
 
-    @staticmethod
-    def _strip_accents(s: str) -> str:
-        return ''.join(
-            c for c in unicodedata.normalize('NFD', s)
-            if unicodedata.category(c) != 'Mn'
-        )
 
-    @classmethod
-    def normalize_key(cls, filename: str) -> str:
-        # Extrae nombre base, quita sufijo numérico, puntos, underscores y acentos
-        base = os.path.splitext(os.path.basename(filename))[0]
-        base = re.sub(r'_(\d+)$', '', base)
-        s = cls._strip_accents(base)
-        s = s.replace('.', ' ').replace('_', ' ')
-        s = re.sub(r'[^A-Za-z0-9 ]+', ' ', s)
-        return ' '.join(s.split()).lower()
+def main():
+    parser = argparse.ArgumentParser(
+        description="Recognize which track in the database best matches the given sample."
+    )
+    parser.add_argument(
+        "-d", "--database",
+        required=True,
+        help="Path to the SQLite database file containing fingerprints (e.g., database_file.sqlite)."
+    )
+    parser.add_argument(
+        "-i", "--input",
+        required=True,
+        help="Path to the .wav file you want to identify."
+    )
+    args = parser.parse_args()
 
-    def recognize(self, sample_path: str) -> (str, int):
-        # 1) Extraer huellas
-        y = load_audio(sample_path, target_sr=self.fg.sr)
-        f_arr, t_arr, Sxx = self.fg.compute_spectrogram(y)
-        tv, fv     = self.fg.get_peaks(Sxx, t_arr, f_arr)
-        raw_hashes = list(self.fg.generate_hashes(tv, fv))  # [(hash, t), ...]
+    db_path = args.database
+    sample_path = args.input
 
-        if not raw_hashes:
-            return None, 0
+    # Aquí usamos InMemoryRecognizer (igual que en el notebook)
+    rec = InMemoryRecognizer(db_path, sr=44100)
+    track, count = rec.recognize(sample_path)
 
-        # 2) Preparamos el CTE sample(hash)
-        hashes = [h for h,_ in raw_hashes]
-        # “VALUES (?), (?), …”
-        values = ",".join(["(?)"] * len(hashes))
-        cte = f"WITH sample(hash) AS (VALUES {values})"
+    if track is None:
+        print("[identify] No matches found.")
+    else:
+        print(f"[identify] Most likely track: '{track}' with {count} matches.")
 
-        # 3) Query única muy rápida en C
-        sql = f"""
-        {cte}
-        SELECT f.track, COUNT(*) AS cnt
-        FROM fingerprints f
-        JOIN sample s ON f.hash = s.hash
-        GROUP BY f.track
-        ORDER BY cnt DESC
-        LIMIT 1;
-        """
-        self.cur.execute(sql, hashes)
-        row = self.cur.fetchone()
-        return (row[0], row[1]) if row else (None, 0)
-
-
-            
+if __name__ == "__main__":
+    main()
+         
